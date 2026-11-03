@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>游戏性能实验室 · OpenRevo</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="shell" id="dropzone">
+    <header class="hero">
+      <div class="brand">
+        <div class="mark" aria-hidden="true">G</div>
+        <div>
+          <div class="eyebrow">GOZXIAO / OPENREVO EXTENSION</div>
+          <h1>游戏性能实验室 <span class="version">v0.1</span></h1>
+          <div class="subline">基于 Intel PresentMon · 真实帧时间分析 · 本地数据不上传</div>
+        </div>
+      </div>
+      <span class="pill" id="mode-pill">离线分析模式</span>
+    </header>
+
+    <section class="toolbar">
+      <div class="source">
+        <label class="primary-btn" for="input-csv">导入 PresentMon CSV</label>
+        <input id="input-csv" type="file" accept=".csv,text/csv" hidden>
+        <button id="clear" class="plain-btn" type="button">清除记录</button>
+        <span class="tip">也可以将 CSV 文件拖入这个窗口</span>
+      </div>
+      <div class="source">
+        <label for="app-select" class="label">游戏进程</label>
+        <select id="app-select" aria-label="游戏进程" disabled><option>尚未导入</option></select>
+        <button type="button" class="plain-btn" id="export" disabled>导出 JSON 报告</button>
+      </div>
+    </section>
+
+    <div role="status" aria-live="polite" class="status" id="status">等待导入真实的 PresentMon 帧时间数据。未采集到的数据将显示为「--」。</div>
+
+    <section class="metrics" aria-label="性能概要">
+      <article class="metric"><span>平均 FPS</span><strong id="avg-fps">--</strong><small>屏幕显示帧 / 秒</small></article>
+      <article class="metric"><span>1% Low</span><strong id="low-1">--</strong><small>99% 帧时间分位倒数</small></article>
+      <article class="metric"><span>0.1% Low</span><strong id="low-01">--</strong><small>99.9% 帧时间分位倒数</small></article>
+      <article class="metric"><span>平均帧时间</span><strong id="frame-ms">--</strong><small>毫秒 / 帧</small></article>
+      <article class="metric"><span>有效帧数</span><strong id="count">--</strong><small>保留主交换链帧</small></article>
+    </section>
+
+    <section class="panel chart-panel">
+      <div class="section-heading">
+        <div><h2>FPS 时间曲线</h2><p>每秒汇总显示帧率，拒绝用模拟数据占位。</p></div>
+        <div class="legend"><span class="dot"></span> 平均 FPS</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="fps-chart" role="img" aria-label="每秒 FPS 变化曲线"></canvas>
+        <div class="no-data" id="no-chart">导入帧记录后在这里绘制性能曲线</div>
+      </div>
+    </section>
+
+    <section class="details">
+      <article class="panel">
+        <div class="section-heading"><div><h2>采样信息</h2><p>确保你知道当前 FPS 数据从哪里来。</p></div></div>
+        <dl>
+          <dt>游戏进程</dt><dd id="detail-process">--</dd>
+          <dt>记录时长</dt><dd id="detail-duration">--</dd>
+          <dt>P99 帧时间</dt><dd id="detail-p99">--</dd>
+          <dt>采用的帧时间列</dt><dd id="detail-source">--</dd>
+          <dt>主交换链</dt><dd id="detail-swap">--</dd>
+          <dt>帧类型识别</dt><dd id="detail-fg">--</dd>
+        </dl>
+      </article>
+      <article class="panel guide">
+        <div class="section-heading"><div><h2>如何录制新游戏？</h2><p>复用 Intel 官方 PresentMon，不注入游戏。</p></div></div>
+        <ol>
+          <li>打开插件目录中的 <code>capture.cmd</code>。</li>
+          <li>输入当前游戏的进程名，例如 <code>game.exe</code>。</li>
+          <li>游戏运行 60 秒，录制结束会生成 CSV。</li>
+          <li>把 CSV 拖到本页面，立即生成帧率报告。</li>
+        </ol>
+        <div class="notice">此版本暂不提供游戏内悬浮 OSD 或自动游戏识别；与水冷控制完全隔离。后续版本将接入实时采集与只读硬件遥测。</div>
+        <a class="docs" href="https://github.com/GameTechDev/PresentMon/releases/tag/v2.6.0" rel="noopener noreferrer" target="_blank">官方 PresentMon 项目</a>
+      </article>
+    </section>
+    <footer>Gozxiao · 本地 CSV 分析 · 不访问网络接口 · 不修改水泵/CPU/GPU 设置</footer>
+  </main>
+  <script src="./parse.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
