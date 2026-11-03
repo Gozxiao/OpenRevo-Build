@@ -1,0 +1,78 @@
+name: Game Performance Lab Plugin (offline MVP)
+
+on:
+  push:
+    branches:
+      - feat/game-performance-lab
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: game-performance-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-package:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout dedicated plugin branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js for dependency-free parser tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run game data parser and privacy tests
+        shell: pwsh
+        run: |
+          node --test tests/game-performance-lab.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw "Parser tests failed" }
+
+      - name: Download verified Intel PresentMon 2.6.0 CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $url = 'https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe'
+          $out = 'PresentMon-2.6.0-x64.exe'
+          Invoke-WebRequest -Uri $url -OutFile $out -MaximumRedirection 5
+          $expected = 'b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af'
+          $actual = (Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "PresentMon SHA256 mismatch! Got: $actual" }
+          if ((Get-Item $out).Length -ne 980320) { throw "Unexpected official release binary size" }
+          Write-Host "Official Intel PresentMon verified SHA256: $actual"
+
+      - name: Build self-contained OpenRevo tab plugin ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = 'dist'
+          $folder = Join-Path $out 'gozxiao-game-performance-lab'
+          New-Item -ItemType Directory -Path $folder -Force | Out-Null
+          Copy-Item 'plugins/game-performance-lab/*' $folder -Recurse -Force
+          Copy-Item 'PresentMon-2.6.0-x64.exe' $folder -Force
+          $m = Get-Content -LiteralPath (Join-Path $folder 'manifest.json') -Raw | ConvertFrom-Json
+          if ($m.id -ne 'gozxiao-game-performance-lab' -or $m.plugin_type -ne 'tab') { throw "Invalid OpenRevo plugin manifest" }
+          $archive = Join-Path $out 'gozxiao-game-performance-lab-v0.1.0.zip'
+          Compress-Archive -Path "$folder/*" -DestinationPath $archive -Force -CompressionLevel Optimal
+          $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$digest  gozxiao-game-performance-lab-v0.1.0.zip" | Set-Content -Path (Join-Path $out 'SHA256SUMS.txt') -Encoding ascii
+          Write-Host "Prepared plugin ZIP: $archive"
+          Get-Item $archive | Select-Object Name,Length
+          Get-Content (Join-Path $out 'SHA256SUMS.txt')
+
+      - name: Upload downloadable plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRevo-Game-Performance-Lab-v0.1.0-Plugin
+          path: |
+            dist/gozxiao-game-performance-lab-v0.1.0.zip
+            dist/SHA256SUMS.txt
+          retention-days: 14
+          if-no-files-found: error
