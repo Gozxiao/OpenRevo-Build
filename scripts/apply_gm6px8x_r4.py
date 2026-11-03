@@ -302,14 +302,14 @@ pub struct BleCoolerController {''',
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>''',
         '''          )}
           <span
-            title={\`BIOS 原始型号：\${coolerData.bios_model_name || '未识别'}；\${coolerData.gpu_only_model ? '已启用 GPU 独立水冷策略' : '采用原版联合温控策略'}\`}
+            title={'BIOS 原始型号：' + (coolerData.bios_model_name || '未识别') + '；' + (coolerData.gpu_only_model ? '已启用 GPU 独立水冷策略' : '采用原版联合温控策略')}
             style={{
               fontSize: '9px', fontWeight: 600, color: 'var(--status-info)',
               border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xs)',
               padding: '3px 7px', maxWidth: '208px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
             }}
           >
-            {coolerData.gpu_only_model ? '机型：旷世16 Super (GM6PX8X)' : \`机型：\${coolerData.bios_model_name || '未识别'}\`}
+            {coolerData.gpu_only_model ? '机型：旷世16 Super (GM6PX8X)' : '机型：' + (coolerData.bios_model_name || '未识别')}
           </span>
         </div>
 
@@ -319,10 +319,10 @@ pub struct BleCoolerController {''',
     replace_once(header,
         '''              color: coolerData.connected
                 ? (coolerData.is_flow_ok ? 'var(--status-ok)' : 'var(--status-warn)')
-                : 'var(--text-muted)', ''',
+                : 'var(--text-muted)',''',
         '''              color: coolerData.connected
                 ? (pumpCommandedOff ? 'var(--text-muted)' : coolerData.is_flow_ok ? 'var(--status-ok)' : 'var(--status-warn)')
-                : 'var(--text-muted)', ''',
+                : 'var(--text-muted)',''',
         "Prevent green flow status with stop command")
 
     replace_once(header,
@@ -354,7 +354,7 @@ pub struct BleCoolerController {''',
         '''          <div className="cooler-strat-sub" style={{ fontSize: '9px', fontWeight: 700, color: 'var(--status-info)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>''',
         '''          {gpuOnlyModel && strategy === 'smart' && (
             <div style={{ fontSize: '9px', color: 'var(--status-info)', lineHeight: 1.4 }}>
-              当前判断：{smartPhase || '正在初始化'}{smartWaitSecs ? \`（约剩 \${smartWaitSecs} 秒）\` : ''}
+              当前判断：{smartPhase || '正在初始化'}{smartWaitSecs ? '（约剩 ' + smartWaitSecs + ' 秒）' : ''}
             </div>
           )}
           <div className="cooler-strat-sub" style={{ fontSize: '9px', fontWeight: 700, color: 'var(--status-info)', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>''',
