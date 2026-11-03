@@ -1,0 +1,14 @@
+{
+  "id": "gozxiao-game-performance-lab",
+  "name": "游戏性能实验室",
+  "version": "0.1.0",
+  "author": "Gozxiao",
+  "description": "基于 Intel PresentMon 的离线帧时间分析、1% Low、FPS 趋势及游戏记录；无游戏内注入。",
+  "plugin_type": "tab",
+  "entry": "index.html",
+  "min_host_version": "0.9.3",
+  "telemetry": {
+    "enabled": false
+  },
+  "permissions": []
+}
