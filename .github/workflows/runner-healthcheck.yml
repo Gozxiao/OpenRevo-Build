@@ -1,0 +1,17 @@
+name: Check GitHub Runner Availability
+
+on:
+  push:
+    branches:
+      - build/gpu-watercooler-fix-v0.9.3
+
+permissions:
+  contents: read
+
+jobs:
+  basic-linux-runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Runner startup check
+        run: echo "GitHub hosted runner started successfully"
