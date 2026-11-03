@@ -114,9 +114,12 @@ def main():
     old='        self.state.pump_voltage.store(target_pump, Ordering::SeqCst);\n        self.state.fan_duty.store(target_fan, Ordering::SeqCst);'
     new='        self.state.pump_tier.store(CoolerPumpTier::from_u8(target_pump) as u8, Ordering::SeqCst);\n'+old
     src=cooler.read_text(encoding="utf-8")
-    if src.count(old)!=2:
-        raise SystemExit(f"Expected 2 reconnect/resume writes, found {src.count(old)}")
-    cooler.write_text(src.replace(old,new),encoding="utf-8",newline="\n")
+    reconnect=src.index("    pub fn reconnect(&self)")
+    after_resume=src.index("    /// Graceful and immediate shutdown",reconnect)
+    head,methods,tail=src[:reconnect],src[reconnect:after_resume],src[after_resume:]
+    if methods.count(old)!=2:
+        raise SystemExit(f"Expected 2 reconnect/resume writes, found {methods.count(old)}")
+    cooler.write_text(head+methods.replace(old,new)+tail,encoding="utf-8",newline="\n")
     print("r5: synchronize tier and voltage on reconnect AND resume")
     edit(cooler,
         '        self.state.pump_voltage.store(pump_v, Ordering::SeqCst);\n'
