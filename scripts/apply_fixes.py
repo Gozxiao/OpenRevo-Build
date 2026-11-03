@@ -166,11 +166,12 @@ pub fn get_current_max_temp() -> u8 {
 fn calculate_gpu_first_cooler_temp(cpu: u8, gpu: Option<u8>) -> u8 {
     let Some(gpu) = gpu else {
         // On a sleeping or unreadable GPU, retain CPU-driven cooling.
-        return cpu.max(30);
+        // Missing both sensors must not silently turn off a connected water pump.
+        return if cpu < 10 { 65 } else { cpu.max(30) };
     };
     // Keep CPU high-temperature escalation while avoiding transient CPU-only spikes.
     let cpu_guard = if cpu >= 95 { cpu } else if cpu >= 85 { 80 }
-        else if cpu >= 75 { 60 } else { 30 };
+        else if cpu >= 75 { 65 } else if cpu >= 60 { 55 } else { 30 };
     gpu.max(cpu_guard).max(30)
 }
 
@@ -184,13 +185,15 @@ mod gpu_first_cooler_temp_tests {
     }
     #[test]
     fn preserves_cpu_guardrails() {
-        assert_eq!(calculate_gpu_first_cooler_temp(82, Some(43)), 60);
+        assert_eq!(calculate_gpu_first_cooler_temp(82, Some(43)), 65);
         assert_eq!(calculate_gpu_first_cooler_temp(90, Some(43)), 80);
         assert_eq!(calculate_gpu_first_cooler_temp(96, Some(43)), 96);
+        assert_eq!(calculate_gpu_first_cooler_temp(70, Some(43)), 55);
     }
     #[test]
     fn falls_back_to_cpu_when_gpu_unavailable() {
         assert_eq!(calculate_gpu_first_cooler_temp(78, None), 78);
+        assert_eq!(calculate_gpu_first_cooler_temp(0, None), 65);
     }
 }"""
     replace_exact(cooler, old_cooler, new_cooler, "GPU-first cooler strategy with CPU guardrails")
@@ -200,8 +203,8 @@ mod gpu_first_cooler_temp_tests {
         '  // Match the Rust BLE controller smart-temperature calculation.\n'
         '  const cpuMeasured = Math.max(0, status.cpu_temp || 0);\n'
         '  const gpuMeasured = status.gpu_temp > 0 && status.gpu_temp <= 110 ? status.gpu_temp : null;\n'
-        '  const cpuGuard = cpuMeasured >= 95 ? cpuMeasured : cpuMeasured >= 85 ? 80 : cpuMeasured >= 75 ? 60 : 30;\n'
-        '  const liveMaxTemp = gpuMeasured === null ? Math.max(30, cpuMeasured) : Math.max(30, gpuMeasured, cpuGuard);',
+        '  const cpuGuard = cpuMeasured >= 95 ? cpuMeasured : cpuMeasured >= 85 ? 80 : cpuMeasured >= 75 ? 65 : cpuMeasured >= 60 ? 55 : 30;\n'
+        '  const liveMaxTemp = gpuMeasured === null ? (cpuMeasured < 10 ? 65 : Math.max(30, cpuMeasured)) : Math.max(30, gpuMeasured, cpuGuard);',
         "Keep water-cooler chart in sync with controller")
     hdr = root / "src/components/water_cooler/CoolerHeaderTelemetry.tsx"
     replace_exact(hdr,
