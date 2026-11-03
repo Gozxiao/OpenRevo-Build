@@ -357,20 +357,13 @@ mod gpu_only_pump_guard_tests {
         '依据核心温度动态调控，<strong style={{ color: \'var(--status-ok)\' }}>&lt;55°C 风扇停转</strong>',
         '依据{gpuOnlyModel ? \'GPU 温度（启停延时）\' : \'CPU/GPU 最高温度\'}动态调控，<strong style={{ color: \'var(--status-ok)\' }}>低温安静</strong>',
         "Adjust strategy description")
-    replace_one(ui,
-        '''          <CoolerPresetCards
-          ''',
-        '''          <CoolerPresetCards
-          ''',
-        "Check preset anchor") if False else None
-
     # The prop is injected between preset invocation and strategy, not globally.
     replace_one(ui,
-        '''          <CoolerPresetCards
-            strategy={coolerData.strategy}''',
-        '''          <CoolerPresetCards
-            gpuOnlyModel={coolerData.gpu_only_model}
-            strategy={coolerData.strategy}''',
+        '''        <CoolerPresetCards
+          strategy={coolerData.strategy}''',
+        '''        <CoolerPresetCards
+          gpuOnlyModel={coolerData.gpu_only_model}
+          strategy={coolerData.strategy}''',
         "Tell preset cards whether the GM6PX8X-specific controller is active")
 
     print("GM6PX8X GPU-only silent-cooling overlay applied.")
