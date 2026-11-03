@@ -33,6 +33,15 @@ jobs:
           path: openrevo
           persist-credentials: false
 
+      - name: Import upstream NVIDIA NVML sampling implementation (PR 133)
+        shell: pwsh
+        run: |
+          # Import only the three GPU telemetry files, not unrelated upstream changes.
+          git -C openrevo fetch --no-tags --depth=1 origin e8881326dbcd6b91a8911034d3685e34547f7234
+          if ($LASTEXITCODE -ne 0) { throw "NVML commit fetch failed" }
+          git -C openrevo checkout FETCH_HEAD -- src-tauri/src/driver/gpu_bridge.rs src-tauri/src/driver/mod.rs src-tauri/src/driver/nvml.rs
+          if ($LASTEXITCODE -ne 0) { throw "NVML source import failed" }
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -44,6 +53,7 @@ jobs:
           python buildfiles/scripts/apply_fixes.py openrevo
           if ($LASTEXITCODE -ne 0) { throw "Source patch failed" }
           git -C openrevo diff --check
+          git -C openrevo diff --cached --check
           if ($LASTEXITCODE -ne 0) { throw "Source diff whitespace check failed" }
           git -C openrevo diff --stat
 
@@ -96,7 +106,7 @@ jobs:
           $installer = Get-ChildItem "openrevo/src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
           if (-not $installer) { throw "Build reported success but NSIS setup is missing" }
           New-Item -Path "out" -ItemType Directory -Force | Out-Null
-          $destName = "OpenRevo-v0.9.3-GPU-Cooler-Fix-x64-Setup.exe"
+          $destName = "OpenRevo-v0.9.3-GPU-Cooler-Fix-r2-x64-Setup.exe"
           Copy-Item -LiteralPath $installer.FullName -Destination (Join-Path "out" $destName) -Force
           $digest = (Get-FileHash -Algorithm SHA256 (Join-Path "out" $destName)).Hash.ToLowerInvariant()
           "$digest  $destName" | Set-Content -Path "out/SHA256SUMS.txt" -Encoding utf8
@@ -106,7 +116,7 @@ jobs:
       - name: Upload private Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenRevo-v0.9.3-GPU-Cooler-Fix-Windows-Setup
+          name: OpenRevo-v0.9.3-GPU-Cooler-Fix-r2-Windows-Setup
           path: out/*
           retention-days: 7
           if-no-files-found: error
