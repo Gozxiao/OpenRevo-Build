@@ -56,6 +56,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "GM6PX8X anti-cycling patch failed" }
           python buildfiles/scripts/apply_gm6px8x_r4.py openrevo
           if ($LASTEXITCODE -ne 0) { throw "GM6PX8X r4 state machine patch failed" }
+          python buildfiles/scripts/apply_gm6px8x_r5.py openrevo
+          if ($LASTEXITCODE -ne 0) { throw "GM6PX8X r5 independent-threshold patch failed" }
           git -C openrevo diff --check
           git -C openrevo diff --cached --check
           if ($LASTEXITCODE -ne 0) { throw "Source diff whitespace check failed" }
@@ -120,7 +122,7 @@ jobs:
           $installer = Get-ChildItem "openrevo/src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
           if (-not $installer) { throw "Build reported success but NSIS setup is missing" }
           New-Item -Path "out" -ItemType Directory -Force | Out-Null
-          $destName = "OpenRevo-v0.9.3-GM6PX8X-GPU-Quiet-r4-x64-Setup.exe"
+          $destName = "OpenRevo-v0.9.3-GM6PX8X-GPU-Quiet-r5-x64-Setup.exe"
           Copy-Item -LiteralPath $installer.FullName -Destination (Join-Path "out" $destName) -Force
           $digest = (Get-FileHash -Algorithm SHA256 (Join-Path "out" $destName)).Hash.ToLowerInvariant()
           "$digest  $destName" | Set-Content -Path "out/SHA256SUMS.txt" -Encoding utf8
@@ -130,7 +132,7 @@ jobs:
       - name: Upload private Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenRevo-v0.9.3-GM6PX8X-GPU-Quiet-r4-Windows-Setup
+          name: OpenRevo-v0.9.3-GM6PX8X-GPU-Quiet-r5-Windows-Setup
           path: out/*
           retention-days: 7
           if-no-files-found: error
