@@ -28,88 +28,117 @@ def main() -> None:
         if not p.is_file():
             raise SystemExit(f"Source not found: {p}")
 
+    # NVML implementation is imported from upstream PR #133 before running this script.
+    nvml = root / "src-tauri/src/driver/nvml.rs"
+    mod = root / "src-tauri/src/driver/mod.rs"
+    if not nvml.is_file() or "pub mod nvml;" not in mod.read_text(encoding="utf-8"):
+        raise SystemExit("NVML upstream patch missing; refusing to continue")
+
+    replace_exact(gpu,
+        '        let is_nv = probe_nvidia_presence_registry();',
+        '        // Some NVIDIA laptops lack the OEM/DisplayClass registry keys.\n'
+        '        // Check the physical PCI device as a second source and NVML as a\n'
+        '        // final safe detection route (context drops immediately).\n'
+        '        let is_nv = probe_nvidia_presence_registry()\n'
+        '            || detect_dgpu_from_pci_enum().is_some()\n'
+        '            || crate::driver::nvml::NvmlContext::open().is_ok();',
+        "Robust NVIDIA presence detection via registry, PCI PnP and NVML")
+
     replace_exact(gpu,
         '            temp: AtomicU32::new(35),',
         '            temp: AtomicU32::new(0),',
-        "GPU initial temperature unavailable instead of fake 35C")
+        "Never show a hardcoded fake GPU temperature")
 
     replace_exact(gpu,
-        '                let output = Command::new("nvidia-smi")\n'
-        '                    .creation_flags(CREATE_NO_WINDOW)\n'
-        '                    .args([',
-        '                let output = find_nvidia_smi_command()\n'
-        '                    .args([',
-        "Use existing NVIDIA executable resolver")
+        '        let output = Command::new("nvidia-smi")\n'
+        '            .creation_flags(CREATE_NO_WINDOW)\n'
+        '            .args([\n'
+        '                "--query-gpu=name,clocks.current.graphics,clocks.current.memory,temperature.gpu,utilization.gpu,memory.total,memory.used,power.draw",',
+        '        let output = find_nvidia_smi_command()\n'
+        '            .args([\n'
+        '                "--query-gpu=name,clocks.current.graphics,clocks.current.memory,temperature.gpu,utilization.gpu,memory.total,memory.used,power.draw",',
+        "Locate NVIDIA SMI executable reliably when NVML is unavailable")
+
+    # Reject implausible GPU temperature samples; display '--' rather than 0C.
+    replace_exact(gpu,
+        '                inner.temp.store(s.temp_c, Ordering::SeqCst);',
+        '                if (10..=110).contains(&s.temp_c) {\n'
+        '                    inner.temp.store(s.temp_c, Ordering::SeqCst);\n'
+        '                } else {\n'
+        '                    inner.temp.store(0, Ordering::SeqCst);\n'
+        '                }',
+        "Validate NVML GPU temperature before publishing")
 
     replace_exact(gpu,
-        '                    if out.status.success() {\n'
-        '                        consecutive_failures = 0;\n'
-        '                        let text = String::from_utf8_lossy(&out.stdout);',
-        '                    if out.status.success() {\n'
-        '                        let text = String::from_utf8_lossy(&out.stdout);',
-        "Do not count malformed telemetry as success")
+        '                // 主动释放：Drop 会调用 nvmlShutdown，解除驱动侧的活动引用\n'
+        '                ctx = None;',
+        '                // No valid live reading exists for a sleeping/disconnected GPU.\n'
+        '                inner.temp.store(0, Ordering::SeqCst);\n'
+        '                // 主动释放：Drop 会调用 nvmlShutdown，解除驱动侧的活动引用\n'
+        '                ctx = None;',
+        "Clear stale NVML GPU temperature on disconnect")
+
+    # Legacy fallback must also explicitly detect parse failures.
+    replace_exact(gpu,
+        '                consecutive_failures = 0;\n'
+        '                let text = String::from_utf8_lossy(&out.stdout);',
+        '                let text = String::from_utf8_lossy(&out.stdout);',
+        "Do not treat malformed nvidia-smi data as success")
 
     replace_exact(gpu,
-        '                        if parts.len() >= 7 {\n'
-        '                            let name = parts[0];',
-        '                        if parts.len() >= 7 {\n'
-        '                            // Only a valid NVIDIA sample marks temperature telemetry healthy.\n'
-        '                            if let Ok(t) = parts[3].parse::<u32>() {\n'
-        '                                if (10..=110).contains(&t) {\n'
-        '                                    inner.temp.store(t, Ordering::SeqCst);\n'
-        '                                    consecutive_failures = 0;\n'
-        '                                } else {\n'
-        '                                    consecutive_failures = consecutive_failures.saturating_add(1);\n'
-        '                                }\n'
-        '                            } else {\n'
-        '                                consecutive_failures = consecutive_failures.saturating_add(1);\n'
-        '                            }\n'
-        '                            let name = parts[0];',
-        "Validate actual temperature sample")
-
-    replace_exact(gpu,
-        '                            if let Ok(t) = parts[3].parse::<u32>() {\n'
-        '                                inner.temp.store(t, Ordering::SeqCst);\n'
-        '                            }\n'
-        '                            if let Ok(u) = parts[4].parse::<u32>() {',
-        '                            if let Ok(u) = parts[4].parse::<u32>() {',
-        "Remove unchecked temperature overwrite")
-
-    replace_exact(gpu,
-        '                                    inner.power_dw.store(dw, Ordering::SeqCst);\n'
-        '                                }\n'
-        '                            }\n'
-        '                        }\n'
-        '                    } else {',
-        '                                    inner.power_dw.store(dw, Ordering::SeqCst);\n'
-        '                                }\n'
-        '                            }\n'
+        '                if parts.len() >= 7 {\n'
+        '                    let name = parts[0];',
+        '                if parts.len() >= 7 {\n'
+        '                    if let Ok(t) = parts[3].parse::<u32>() {\n'
+        '                        if (10..=110).contains(&t) {\n'
+        '                            inner.temp.store(t, Ordering::SeqCst);\n'
+        '                            consecutive_failures = 0;\n'
         '                        } else {\n'
         '                            consecutive_failures = consecutive_failures.saturating_add(1);\n'
         '                        }\n'
-        '                    } else {',
-        "Track malformed short rows")
+        '                    } else {\n'
+        '                        consecutive_failures = consecutive_failures.saturating_add(1);\n'
+        '                    }\n'
+        '                    let name = parts[0];',
+        "Validate legacy temperature telemetry")
 
     replace_exact(gpu,
+        '                    if let Ok(t) = parts[3].parse::<u32>() {\n'
+        '                        inner.temp.store(t, Ordering::SeqCst);\n'
+        '                    }\n'
+        '                    if let Ok(u) = parts[4].parse::<u32>() {',
+        '                    if let Ok(u) = parts[4].parse::<u32>() {',
+        "Avoid overwriting validated GPU telemetry")
+
+    replace_exact(gpu,
+        '                }\n'
+        '            } else {\n'
+        '                consecutive_failures = consecutive_failures.saturating_add(1);\n'
+        '            }\n'
+        '        } else {\n'
+        '            consecutive_failures = consecutive_failures.saturating_add(1);\n'
+        '        }\n'
+        '    }\n'
+        '}\n\n'
+        'static NVIDIA_POWER_LIMITS_CACHE:',
         '                } else {\n'
         '                    consecutive_failures = consecutive_failures.saturating_add(1);\n'
         '                }\n'
+        '            } else {\n'
+        '                consecutive_failures = consecutive_failures.saturating_add(1);\n'
         '            }\n'
-        '        });\n'
-        '    }\n\n'
-        '    pub fn get_gpu_count(&self) -> u32 {',
-        '                } else {\n'
-        '                    consecutive_failures = consecutive_failures.saturating_add(1);\n'
-        '                }\n'
-        '                // Invalid or stale GPU readings must not drive external cooling.\n'
-        '                if consecutive_failures >= 3 && inner.temp.swap(0, Ordering::SeqCst) != 0 {\n'
-        '                    crate::log_warn!("GPU_BRIDGE", "GPU temperature sample stale; reporting unavailable");\n'
-        '                }\n'
+        '        } else {\n'
+        '            consecutive_failures = consecutive_failures.saturating_add(1);\n'
+        '        }\n'
+        '        if consecutive_failures >= 3 {\n'
+        '            if inner.temp.swap(0, Ordering::SeqCst) != 0 {\n'
+        '                crate::log_warn!("GPU_BRIDGE", "GPU sample lost in nvidia-smi fallback; temperature unavailable");\n'
         '            }\n'
-        '        });\n'
-        '    }\n\n'
-        '    pub fn get_gpu_count(&self) -> u32 {',
-        "Clear stale temperature after repeated failures")
+        '        }\n'
+        '    }\n'
+        '}\n\n'
+        'static NVIDIA_POWER_LIMITS_CACHE:',
+        "Avoid stale legacy GPU temperature")
 
     old_cooler = """pub fn get_current_max_temp() -> u8 {
     let cpu_t = crate::system::cpu_monitor::get_global_cpu_monitor().get_temp().max(0) as u8;
@@ -174,6 +203,15 @@ mod gpu_first_cooler_temp_tests {
         '  const cpuGuard = cpuMeasured >= 95 ? cpuMeasured : cpuMeasured >= 85 ? 80 : cpuMeasured >= 75 ? 60 : 30;\n'
         '  const liveMaxTemp = gpuMeasured === null ? Math.max(30, cpuMeasured) : Math.max(30, gpuMeasured, cpuGuard);',
         "Keep water-cooler chart in sync with controller")
+    hdr = root / "src/components/water_cooler/CoolerHeaderTelemetry.tsx"
+    replace_exact(hdr,
+        '核心综合温度 max(CPU, GPU)',
+        '水冷智能控制温度（GPU 优先 / CPU 保护）',
+        "Label reflects GPU-first guardrail logic")
+    replace_exact(hdr,
+        '(CPU {cpuTemp}° / GPU {gpuTemp}°)',
+        '(CPU {cpuTemp > 0 ? cpuTemp : "--"}° / GPU {gpuTemp > 0 ? gpuTemp : "--"}°)',
+        "Show unavailable GPU temperature as -- instead of fake 0C")
     print("All source changes applied. No hardware access has occurred.")
 
 
