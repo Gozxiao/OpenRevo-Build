@@ -13,7 +13,7 @@ def main():
     src = Path(sys.argv[1]) / "src-tauri/src/driver/ble_cooler.rs"
     out = Path(sys.argv[2])
     s = src.read_text(encoding="utf-8")
-    a = s.find("/// GM6PX8X only: quick start")
+    a = s.find("/// GPU-only loop on confirmed GM6PX8X hardware.")
     b = s.find("\npub fn calculate_strategy_params(", a)
     if a < 0 or b < a or "mod gpu_only_pump_guard_tests" not in s[a:b]:
         raise SystemExit("R4 Rust state machine and its tests not found")
