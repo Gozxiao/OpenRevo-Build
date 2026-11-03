@@ -62,7 +62,7 @@ test('Never invent FrameType or valid FPS from empty telemetry',()=>{
 
 test('Quantiles are monotonic and 1% Low <= average FPS for slowdown frames',()=>{
   const rows=['Application,MsBetweenDisplayChange'];
-  for(let i=0;i<100;i++)rows.push('game.exe,'+(i===99?'100':'10'));
+  for(let i=0;i<100;i++)rows.push('game.exe,'+(i>=98?'100':'10'));
   const s=parser.summarize(parser.parse(rows.join('\n')));
   assert.ok(s.low1<s.meanFps,{low:s.low1,mean:s.meanFps});
   assert.ok(s.low01<=s.low1);
