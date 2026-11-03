@@ -1,0 +1,112 @@
+name: Build OpenRevo 0.9.3 GPU Cooler Test Setup
+
+on:
+  push:
+    branches:
+      - build/gpu-watercooler-fix-v0.9.3
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openrevo-gpu-cooler-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Windows x64 NSIS test installer
+    runs-on: windows-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout isolated patch and build scripts
+        uses: actions/checkout@v4
+        with:
+          path: buildfiles
+          persist-credentials: false
+
+      - name: Checkout verified OpenRevo v0.9.3 source commit
+        uses: actions/checkout@v4
+        with:
+          repository: faintonce/open-revo
+          ref: ae53770d4524cd5040c612528e287aef7cc4b928
+          path: openrevo
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply guarded source changes
+        shell: pwsh
+        run: |
+          python buildfiles/scripts/apply_fixes.py openrevo
+          if ($LASTEXITCODE -ne 0) { throw "Source patch failed" }
+          git -C openrevo diff --check
+          if ($LASTEXITCODE -ne 0) { throw "Source diff whitespace check failed" }
+          git -C openrevo diff --stat
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: openrevo/pnpm-lock.yaml
+
+      - name: Set up Rust MSVC
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: openrevo/src-tauri -> target
+
+      - name: Install locked frontend dependencies
+        working-directory: openrevo
+        shell: pwsh
+        run: |
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
+
+      - name: Check GPU-first water-cooling Rust tests
+        working-directory: openrevo
+        shell: pwsh
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml gpu_first_cooler_temp_tests
+          if ($LASTEXITCODE -ne 0) { throw "Rust tests failed" }
+
+      - name: Build NSIS installer (test build; unsigned)
+        working-directory: openrevo
+        shell: pwsh
+        run: |
+          pnpm tauri build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw "NSIS build failed" }
+
+      - name: Collect setup and SHA-256 digest
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "openrevo/src-tauri/target/release/bundle/nsis" -Filter "*.exe" -File | Select-Object -First 1
+          if (-not $installer) { throw "Build reported success but NSIS setup is missing" }
+          New-Item -Path "out" -ItemType Directory -Force | Out-Null
+          $destName = "OpenRevo-v0.9.3-GPU-Cooler-Fix-x64-Setup.exe"
+          Copy-Item -LiteralPath $installer.FullName -Destination (Join-Path "out" $destName) -Force
+          $digest = (Get-FileHash -Algorithm SHA256 (Join-Path "out" $destName)).Hash.ToLowerInvariant()
+          "$digest  $destName" | Set-Content -Path "out/SHA256SUMS.txt" -Encoding utf8
+          Get-ChildItem out
+          Get-Content out/SHA256SUMS.txt
+
+      - name: Upload private Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRevo-v0.9.3-GPU-Cooler-Fix-Windows-Setup
+          path: out/*
+          retention-days: 7
+          if-no-files-found: error
