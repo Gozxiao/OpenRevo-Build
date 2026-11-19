@@ -207,6 +207,7 @@ impl Policy {
 #[cfg(not(r7_standalone_test))]
 static LIVE_POLICY: OnceLock<Mutex<Policy>> = OnceLock::new();
 
+#[cfg(not(r7_standalone_test))]
 pub fn evaluate_live(start: u8, stop: u8, turbo: u8) -> (CoolerPumpTier, u8) {
     let now = Instant::now();
     let state = LIVE_POLICY.get_or_init(|| Mutex::new(Policy::new(now)));
