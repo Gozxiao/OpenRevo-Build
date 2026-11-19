@@ -131,9 +131,15 @@ impl Policy {
         let alpha = 1.0 - (-dt / 16.0).exp();
         self.heat_debt += (fused_pressure - self.heat_debt) * alpha;
 
-        let start_condition = self.heat_debt >= 0.11
-            || cpu.is_some_and(|v| v >= 82)
-            || gpu.is_some_and(|v| v >= 78);
+        // The user-facing Start handles are real parameters, not decorative:
+        // an accumulated heat budget and at least one sustained above-Start
+        // source are required for ordinary activation. Very hot sustained
+        // loads can start sooner, but a one-sample boost spike cannot.
+        let source_ready = self.cpu_ema.is_some_and(|v| v >= t.cpu_start() as f32)
+            || self.gpu_ema.is_some_and(|v| v >= t.gpu_start as f32);
+        let fast_heat = cpu.is_some_and(|v| v >= t.cpu_start().saturating_add(20))
+            || gpu.is_some_and(|v| v >= t.gpu_start.saturating_add(20));
+        let start_condition = (self.heat_debt >= 0.045 && source_ready) || fast_heat;
         let stop_condition = self.heat_debt <= 0.055
             && self.cpu_ema.is_some_and(|v| v <= t.cpu_stop() as f32)
             && self.gpu_ema.is_some_and(|v| v <= t.gpu_stop as f32);
