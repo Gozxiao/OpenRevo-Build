@@ -157,10 +157,10 @@ def patch(root):
       });
 """, "frontend IPC")
     edit(VIEW,
-         "          pumpStartTemp={coolerData.pump_start_temp ?? 55}\\n",
-         "          pumpStartTemp={coolerData.pump_start_temp ?? 55}\\n"
-         "          pumpStopTemp={coolerData.pump_stop_temp ?? 47}\\n"
-         "          showStopHandle={coolerData.dual_loop_model}\\n",
+         "          pumpStartTemp={coolerData.pump_start_temp ?? 55}\n",
+         "          pumpStartTemp={coolerData.pump_start_temp ?? 55}\n"
+         "          pumpStopTemp={coolerData.pump_stop_temp ?? 47}\n"
+         "          showStopHandle={coolerData.dual_loop_model}\n",
          "restore r5 vertical stop line")
 
 
