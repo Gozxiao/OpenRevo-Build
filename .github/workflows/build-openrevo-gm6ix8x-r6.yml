@@ -68,6 +68,18 @@ jobs:
           git -C openrevo-upstream diff --check
           if ($LASTEXITCODE -ne 0) { throw 'Patch whitespace validation failed' }
 
+      - name: Fix pinned upstream resource include paths
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = 'openrevo-upstream/src-tauri/crates/openrevo-core/src/hal/declarative/model_manifest.rs'
+          $body = [System.IO.File]::ReadAllText($file)
+          $old = '../../../resources/drivers/'
+          $count = ($body.Split([string[]]@($old), [System.StringSplitOptions]::None)).Length - 1
+          if ($count -ne 5) { throw "Expected exactly 5 upstream include paths; got $count" }
+          $body = $body.Replace($old, '../../../../../resources/drivers/')
+          [System.IO.File]::WriteAllText($file, $body, (New-Object System.Text.UTF8Encoding($false)))
+
       - name: Install dependencies
         working-directory: openrevo-upstream
         shell: pwsh
