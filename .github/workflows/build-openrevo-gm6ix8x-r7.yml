@@ -98,15 +98,17 @@ jobs:
           pnpm install --frozen-lockfile
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
 
-      - name: Test cooler policy
-        working-directory: openrevo-upstream
+      - name: Test actual r7 thermal policy with standalone rustc
         shell: pwsh
         run: |
-          $testOutput = cargo test --manifest-path src-tauri/Cargo.toml -p open-revo dual_loop_tests --lib 2>&1 | Out-String
-          Write-Output $testOutput
-          if ($LASTEXITCODE -ne 0) { throw 'New GM6IX8X policy tests failed' }
-          if ($testOutput -notmatch '8 passed; 0 failed') { throw 'Wrong suite or zero actual r7 policy tests ran' }
-          if ($LASTEXITCODE -ne 0) { throw 'Cooler policy tests failed' }
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force test-rust | Out-Null
+          rustc --edition=2021 --test --cfg r7_standalone_test openrevo-upstream/src-tauri/src/driver/dual_loop_policy.rs -o test-rust/r7-policy-tests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to compile the actual r7 policy unit tests' }
+          $result = & ./test-rust/r7-policy-tests.exe 2>&1 | Out-String
+          Write-Output $result
+          if ($LASTEXITCODE -ne 0) { throw 'r7 policy test executable failed' }
+          if ($result -notmatch '8 passed; 0 failed') { throw 'Expected 8 r7 policy tests to execute successfully' }
 
       - name: Build NSIS Setup
         working-directory: openrevo-upstream
