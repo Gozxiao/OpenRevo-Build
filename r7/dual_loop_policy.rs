@@ -1,9 +1,14 @@
+#![allow(unexpected_cfgs)]
 //! GM6IX8X adaptive cooler supervisor: separate thermal histories -> weighted heat
 //! pressure -> hysteretic pump state. High individual temperatures are *safety* trips,
 //! never the ordinary pump control signal.
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+#[cfg(not(r7_standalone_test))]
 use super::ble_cooler::CoolerPumpTier;
+#[cfg(r7_standalone_test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CoolerPumpTier { Stop, Silent, Standard, Turbo }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Thresholds {
@@ -25,6 +30,7 @@ impl Thresholds {
     fn cpu_turbo(self) -> u8 { self.gpu_turbo.saturating_add(2).min(98) }
 }
 
+#[cfg(not(r7_standalone_test))]
 pub fn is_active_machine() -> bool {
     static ACTIVE: OnceLock<bool> = OnceLock::new();
     *ACTIVE.get_or_init(|| {
@@ -33,6 +39,7 @@ pub fn is_active_machine() -> bool {
     })
 }
 
+#[cfg(not(r7_standalone_test))]
 fn current_sensors() -> (Option<u8>, Option<u8>) {
     let ct = crate::system::cpu_monitor::get_global_cpu_monitor().get_temp();
     let cpu = if (10..=110).contains(&ct) { Some(ct as u8) } else { None };
@@ -191,6 +198,7 @@ impl Policy {
     }
 }
 
+#[cfg(not(r7_standalone_test))]
 pub fn evaluate_live(start: u8, stop: u8, turbo: u8) -> (CoolerPumpTier, u8) {
     static STATE: OnceLock<Mutex<Policy>> = OnceLock::new();
     let now = Instant::now();
@@ -200,6 +208,7 @@ pub fn evaluate_live(start: u8, stop: u8, turbo: u8) -> (CoolerPumpTier, u8) {
     policy.update(now, cpu, gpu, Thresholds::safe(start, stop, turbo))
 }
 
+#[cfg(not(r7_standalone_test))]
 pub fn reset_live() {
     static RESET_NOTE: OnceLock<()> = OnceLock::new();
     // The supervisor is process-scoped; explicit reinitialization can be added
