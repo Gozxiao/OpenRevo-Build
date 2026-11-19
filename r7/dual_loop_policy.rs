@@ -199,10 +199,11 @@ impl Policy {
 }
 
 #[cfg(not(r7_standalone_test))]
+static LIVE_POLICY: OnceLock<Mutex<Policy>> = OnceLock::new();
+
 pub fn evaluate_live(start: u8, stop: u8, turbo: u8) -> (CoolerPumpTier, u8) {
-    static STATE: OnceLock<Mutex<Policy>> = OnceLock::new();
     let now = Instant::now();
-    let state = STATE.get_or_init(|| Mutex::new(Policy::new(now)));
+    let state = LIVE_POLICY.get_or_init(|| Mutex::new(Policy::new(now)));
     let mut policy = state.lock().unwrap_or_else(|e| e.into_inner());
     let (cpu, gpu) = current_sensors();
     policy.update(now, cpu, gpu, Thresholds::safe(start, stop, turbo))
@@ -210,10 +211,10 @@ pub fn evaluate_live(start: u8, stop: u8, turbo: u8) -> (CoolerPumpTier, u8) {
 
 #[cfg(not(r7_standalone_test))]
 pub fn reset_live() {
-    static RESET_NOTE: OnceLock<()> = OnceLock::new();
-    // The supervisor is process-scoped; explicit reinitialization can be added
-    // after hardware sleep/wake handshake, once the device protocol is verified.
-    let _ = RESET_NOTE.get_or_init(|| ());
+    if let Some(state) = LIVE_POLICY.get() {
+        let mut policy = state.lock().unwrap_or_else(|e| e.into_inner());
+        *policy = Policy::new(Instant::now());
+    }
 }
 
 #[cfg(test)]

@@ -164,6 +164,25 @@ def patch(root):
          "restore r5 vertical stop line")
 
 
+    # In the new CPU-cooled profile, initial (re)connection primes Standard tier.
+    # Never use a transient max(CPU,GPU) reading to initialize Turbo on the new model.
+    edit(BLE,
+         '        "smart" => {\n            let cur_temp = get_current_max_temp();',
+         '        "smart" if super::dual_loop_policy::is_active_machine() => (CoolerPumpTier::Standard as u8, 42),\n'
+         '        "smart" => {\n            let cur_temp = get_current_max_temp();',
+         "safe initial smart policy")
+
+    edit(BLE,
+         '    pub fn resume_after_wake(&self) {\n',
+         '    pub fn resume_after_wake(&self) {\n'
+         '        if super::dual_loop_policy::is_active_machine() { super::dual_loop_policy::reset_live(); }\n',
+         "reset after resume")
+
+    edit(BLE,
+         '        *self.state.strategy.write() = strategy.to_string();\n',
+         '        *self.state.strategy.write() = strategy.to_string();\n'
+         '        if strategy == "smart" && super::dual_loop_policy::is_active_machine() { super::dual_loop_policy::reset_live(); }\n',
+         "reset on smart strategy selection")
     return d
 
 def main():
