@@ -185,25 +185,8 @@ def patch(root):
 
         {/* 4. 手动精调""", "stop slider")
 
-    edit(GPU, "impl GpuBridge {",
-         """fn find_nvidia_smi_command() -> Command {
-    let windows = std::env::var_os("WINDIR")
-        .map(|p| std::path::PathBuf::from(p).join("System32").join("nvidia-smi.exe"));
-    let nvidia = std::env::var_os("ProgramFiles")
-        .map(|p| std::path::PathBuf::from(p).join("NVIDIA Corporation").join("NVSMI").join("nvidia-smi.exe"));
-    for path in [windows, nvidia].into_iter().flatten() {
-        if path.is_file() {
-            let mut cmd = Command::new(path);
-            cmd.creation_flags(CREATE_NO_WINDOW);
-            return cmd;
-        }
-    }
-    let mut cmd = Command::new("nvidia-smi");
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd
-}
+    # Reuse the upstream find_nvidia_smi_command helper; do not redefine it.
 
-impl GpuBridge {""", "NVIDIA executable lookup")
     edit(GPU,
          """                let output = Command::new("nvidia-smi")
                     .creation_flags(CREATE_NO_WINDOW)
