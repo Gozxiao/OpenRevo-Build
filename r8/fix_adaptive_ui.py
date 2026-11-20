@@ -118,7 +118,7 @@ EDITS = [
   {
     "path": "src/components/water_cooler/CoolerCurvePanel.tsx",
     "old": "              低温停转区 (≤{showStopHandle ? displayStop : displayStart - 5}°C)",
-    "new": "              {isDualProfile ? '低温参考（停泵还需持续冷却）' : <>低温停转区 (&lt;{displayStart}°C)</>}",
+    "new": "              {isDualProfile ? '低温参考（停泵还需持续冷却）' : <>低温停转区 (≤{showStopHandle ? displayStop : displayStart - 5}°C)</>}",
     "label": "curve low label"
   },
   {
