@@ -81,6 +81,12 @@ EDITS = [
     "old": "{isDualProfile ? '双源平滑 + 热负荷累积 + 延时启停（曲线预设不生效）' : '内置 3°C 迟滞滤波防抖'}",
     "new": "{isDualProfile ? '风扇：CPU/GPU平滑温度分别查曲线，取较高需求；水泵：双源热负荷独立控制' : '内置 3°C 迟滞滤波防抖'}",
     "label": "separate fan and pump algorithms"
+  },
+  {
+    "path": "src/components/water_cooler/CoolerCurvePanel.tsx",
+    "old": "<span>{isDualProfile ? '风扇曲线（CPU/GPU分别查表）' : '风扇 (0%~100%)'}</span>\n          </div>",
+    "new": "<span>{isDualProfile ? '风扇曲线（CPU/GPU分别查表）' : '风扇 (0%~100%)'}</span>\n          </div>\n          {isDualProfile && (\n            <div style={{ display: 'flex', alignItems: 'center', fontSize: '9px', color: 'var(--status-info)', fontWeight: 700 }}>\n              风扇指令 {actualFanDuty ?? 0}%\n            </div>\n          )}",
+    "label": "show actual fan command"
   }
 ]
 def main():
