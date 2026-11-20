@@ -188,7 +188,7 @@ def main():
             raise SystemExit(f"r8 anchor mismatch {e['label']} ({path}): {count}")
         by_path[path] = current.replace(e["old"], e["new"], 1)
     for path, content in by_path.items():
-        path.write_text(content, encoding="utf-8", newline="\\n")
+        path.write_text(content, encoding="utf-8", newline="\n")
     print(f"r8: applied {len(EDITS)} exact edits to {len(by_path)} water-cooler UI files; GPU DB untouched")
 
 if __name__ == "__main__":
