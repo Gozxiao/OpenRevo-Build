@@ -81,15 +81,8 @@ EDITS = [
     "old": "{isDualProfile ? '双源平滑 + 热负荷累积 + 延时启停（曲线预设不生效）' : '内置 3°C 迟滞滤波防抖'}",
     "new": "{isDualProfile ? '风扇：CPU/GPU平滑温度分别查曲线，取较高需求；水泵：双源热负荷独立控制' : '内置 3°C 迟滞滤波防抖'}",
     "label": "separate fan and pump algorithms"
-  },
-  {
-    "path": "src/components/water_cooler/CoolerCurvePanel.tsx",
-    "old": "<span>风扇曲线（CPU/GPU分别查表）</span>",
-    "new": "<span>风扇曲线（CPU/GPU分别查表）</span>",
-    "label": "keep"
   }
 ]
-
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: restore_fan_curve.py <openrevo-source-root>")
@@ -107,7 +100,7 @@ def main():
             raise SystemExit(f"r9 anchor mismatch {e['label']} ({path}): {count}")
         by_path[path] = current.replace(e["old"], e["new"], 1)
     for path, content in by_path.items():
-        path.write_text(content, encoding="utf-8", newline="\\n")
+        path.write_text(content, encoding="utf-8", newline="\n")
     print(f"r9: restored editable fan curve and dual-source probes; {len(EDITS)} exact edits across {len(by_path)} files")
 
 if __name__ == "__main__":
