@@ -30,6 +30,38 @@ impl Thresholds {
     fn cpu_turbo(self) -> u8 { self.gpu_turbo.saturating_add(2).min(98) }
 }
 
+fn interpolate_fan_curve(points: &[(u8, u8)], temp: f32) -> u8 {
+    if points.is_empty() { return 65; }
+    let mut sorted = points.to_vec();
+    sorted.sort_by_key(|p| p.0);
+    if temp <= sorted[0].0 as f32 { return sorted[0].1.min(100); }
+    for pair in sorted.windows(2) {
+        let (t1, d1) = pair[0];
+        let (t2, d2) = pair[1];
+        if temp <= t2 as f32 {
+            let span = (t2 as f32 - t1 as f32).max(1.0);
+            let ratio = ((temp - t1 as f32) / span).clamp(0.0, 1.0);
+            return (d1 as f32 + (d2 as f32 - d1 as f32) * ratio)
+                .round().clamp(0.0, 100.0) as u8;
+        }
+    }
+    sorted.last().map(|p| p.1.min(100)).unwrap_or(65)
+}
+
+/// Each filtered sensor is evaluated against the editable fan curve independently.
+/// The higher requested duty wins for cooling safety; pump tier is decided elsewhere
+/// by accumulated dual-source heat debt and never by this maximum.
+fn dual_sensor_fan_duty(points: &[(u8, u8)], cpu: Option<f32>, gpu: Option<f32>) -> u8 {
+    let cpu_duty = cpu.map(|t| interpolate_fan_curve(points, t));
+    let gpu_duty = gpu.map(|t| interpolate_fan_curve(points, t));
+    match (cpu_duty, gpu_duty) {
+        (Some(c), Some(g)) => c.max(g),
+        (Some(c), None) => c.max(65),
+        (None, Some(g)) => g.max(65),
+        (None, None) => 65,
+    }
+}
+
 #[cfg(not(r7_standalone_test))]
 pub fn is_active_machine() -> bool {
     static ACTIVE: OnceLock<bool> = OnceLock::new();
@@ -100,7 +132,7 @@ impl Policy {
         self.turbo_since = None;
         self.turbo_exit_since = None;
     }
-    fn update(&mut self, now: Instant, cpu: Option<u8>, gpu: Option<u8>, t: Thresholds) -> (CoolerPumpTier, u8) {
+    fn update(&mut self, now: Instant, cpu: Option<u8>, gpu: Option<u8>, t: Thresholds, fan_curve: &[(u8, u8)]) -> (CoolerPumpTier, u8) {
         let dt = now.saturating_duration_since(self.last_eval).as_secs_f32().clamp(0.0, 10.0);
         self.last_eval = now;
 
@@ -180,16 +212,14 @@ impl Policy {
             }
         }
 
-        let target_fan = match self.tier {
-            CoolerPumpTier::Stop => 0,
-            CoolerPumpTier::Turbo if emergency => 100,
-            CoolerPumpTier::Turbo => 90,
-            _ if missing => 65,
-            _ => (34.0 + 58.0 * self.heat_debt.sqrt()).round().clamp(34.0, 95.0) as u8,
-        };
+        // Fan cooling is independently driven by the user's editable curve.
+        // CPU/GPU use their own EMA, each gets a curve lookup, and the higher
+        // requested duty wins. Pump Stop does not forcibly switch the radiator fan off.
+        let curve_fan = dual_sensor_fan_duty(fan_curve, self.cpu_ema, self.gpu_ema);
+        let target_fan = if emergency { 100 } else { curve_fan };
 
         // Ramp is expressed per second rather than per polling tick.
-        if emergency || self.tier == CoolerPumpTier::Stop {
+        if emergency {
             self.fan = target_fan;
         } else {
             let up = (6.0 * dt).ceil().max(2.0) as u8;
@@ -208,12 +238,12 @@ impl Policy {
 static LIVE_POLICY: OnceLock<Mutex<Policy>> = OnceLock::new();
 
 #[cfg(not(r7_standalone_test))]
-pub fn evaluate_live(start: u8, stop: u8, turbo: u8) -> (CoolerPumpTier, u8) {
+pub fn evaluate_live(start: u8, stop: u8, turbo: u8, fan_curve: &[(u8, u8)]) -> (CoolerPumpTier, u8) {
     let now = Instant::now();
     let state = LIVE_POLICY.get_or_init(|| Mutex::new(Policy::new(now)));
     let mut policy = state.lock().unwrap_or_else(|e| e.into_inner());
     let (cpu, gpu) = current_sensors();
-    policy.update(now, cpu, gpu, Thresholds::safe(start, stop, turbo))
+    policy.update(now, cpu, gpu, Thresholds::safe(start, stop, turbo), fan_curve)
 }
 
 #[cfg(not(r7_standalone_test))]
@@ -228,8 +258,14 @@ pub fn reset_live() {
 mod dual_loop_tests {
     use super::*;
     fn at(t: Instant, secs: u64) -> Instant { t + Duration::from_secs(secs) }
+    const DEFAULT_TEST_CURVE: [(u8, u8); 6] = [
+        (45, 0), (55, 35), (65, 50), (80, 60), (90, 75), (95, 100),
+    ];
+    fn step_with_curve(p: &mut Policy, t: Instant, cpu: Option<u8>, gpu: Option<u8>, curve: &[(u8, u8)]) -> (CoolerPumpTier, u8) {
+        p.update(t, cpu, gpu, Thresholds::safe(55, 47, 90), curve)
+    }
     fn step(p: &mut Policy, t: Instant, cpu: Option<u8>, gpu: Option<u8>) -> (CoolerPumpTier, u8) {
-        p.update(t, cpu, gpu, Thresholds::safe(55, 47, 90))
+        step_with_curve(p, t, cpu, gpu, &DEFAULT_TEST_CURVE)
     }
     fn idle_to_stop(p: &mut Policy, t: Instant) {
         for n in 0..85 { step(p, at(t,n), Some(41),Some(39)); }
@@ -284,6 +320,38 @@ mod dual_loop_tests {
     fn emergencies_bypass_smoothing() {
         let t=Instant::now(); let mut p=Policy::new(t);
         assert_eq!(step(&mut p,at(t,1),Some(98),Some(40)),(CoolerPumpTier::Turbo,100));
+    }
+    #[test]
+    fn editable_curve_is_interpolated_for_each_sensor() {
+        let curve = [(40, 0), (60, 40), (80, 80), (100, 100)];
+        assert_eq!(interpolate_fan_curve(&curve, 70.0), 60);
+        assert_eq!(dual_sensor_fan_duty(&curve, Some(70.0), Some(50.0)), 60);
+    }
+    #[test]
+    fn fan_curve_changes_fan_without_changing_pump_heat_policy() {
+        let t = Instant::now();
+        let mut quiet = Policy::new(t);
+        let mut aggressive = Policy::new(t);
+        let quiet_curve = [(40, 0), (100, 20)];
+        let aggressive_curve = [(40, 70), (100, 100)];
+        for n in 0..80 {
+            step_with_curve(&mut quiet, at(t, n), Some(75), Some(69), &quiet_curve);
+            step_with_curve(&mut aggressive, at(t, n), Some(75), Some(69), &aggressive_curve);
+        }
+        assert_eq!(quiet.tier, aggressive.tier);
+        assert!((quiet.heat_debt - aggressive.heat_debt).abs() < 0.0001);
+        assert!(aggressive.fan > quiet.fan);
+    }
+    #[test]
+    fn stopped_pump_does_not_force_fan_off_when_curve_requests_airflow() {
+        let t = Instant::now();
+        let mut p = Policy::new(t);
+        let curve = [(30, 30), (100, 100)];
+        for n in 0..100 {
+            step_with_curve(&mut p, at(t, n), Some(41), Some(39), &curve);
+        }
+        assert_eq!(p.tier, CoolerPumpTier::Stop);
+        assert!(p.fan >= 30);
     }
     #[test]
     fn stop_requires_both_cooled_and_dwell() {
