@@ -97,10 +97,13 @@ def patch(root):
                 let target_fan = evaluate_cooler_fan_duty_smooth(max_temp);
 """,
          """                let (next_tier, target_fan) = if super::dual_loop_policy::is_active_machine() {
+                    let curve_points = self.state.curve_points.read().clone();
+                    let fan_curve = curve_points.iter().map(|p| (p.temp, p.fan_duty)).collect::<Vec<_>>();
                     super::dual_loop_policy::evaluate_live(
                         start_temp,
                         self.state.pump_stop_temp.load(Ordering::SeqCst),
                         turbo_temp,
+                        &fan_curve,
                     )
                 } else {
                     (calculate_pump_tier_with_hysteresis(max_temp, cur_tier, start_temp, turbo_temp),
@@ -168,7 +171,7 @@ def patch(root):
     # Never use a transient max(CPU,GPU) reading to initialize Turbo on the new model.
     edit(BLE,
          '        "smart" => {\n            let cur_temp = get_current_max_temp();',
-         '        "smart" if super::dual_loop_policy::is_active_machine() => (CoolerPumpTier::Standard as u8, 42),\n'
+         '        "smart" if super::dual_loop_policy::is_active_machine() => (CoolerPumpTier::Standard as u8, evaluate_cooler_curve(_curve_points, get_current_max_temp()).0),\n'
          '        "smart" => {\n            let cur_temp = get_current_max_temp();',
          "safe initial smart policy")
 
