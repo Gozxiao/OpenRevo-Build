@@ -1,0 +1,137 @@
+name: OpenRevo GM6IX8X r8 Smart UI Setup
+
+on:
+  push:
+    branches:
+      - build/gm6ix8x-r8-smart-ui-setup
+    paths:
+      - 'r8/**'
+      - '.github/workflows/build-openrevo-gm6ix8x-r8.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gm6ix8x-r8-setup
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build unsigned Windows Setup
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Checkout isolated build source
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+          run_install: false
+
+      - name: Setup Rust Windows toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Checkout pinned OpenRevo source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git clone https://github.com/faintonce/open-revo.git openrevo-upstream
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream clone failed' }
+          git -C openrevo-upstream checkout --detach b7d2b526e60cd04965eadab21e606bdb1e1aa56e
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned checkout failed' }
+          if ((git -C openrevo-upstream rev-parse HEAD).Trim() -ne 'b7d2b526e60cd04965eadab21e606bdb1e1aa56e') {
+            throw 'Pinned upstream SHA mismatch'
+          }
+
+      - name: Restore proven r5 NVIDIA NVML GPU telemetry
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git -C openrevo-upstream fetch --no-tags origin e8881326dbcd6b91a8911034d3685e34547f7234
+          if ($LASTEXITCODE -ne 0) { throw 'NVML commit fetch failed' }
+          git -C openrevo-upstream checkout FETCH_HEAD -- src-tauri/src/driver/gpu_bridge.rs src-tauri/src/driver/mod.rs src-tauri/src/driver/nvml.rs
+          if ($LASTEXITCODE -ne 0) { throw 'NVML source import failed' }
+
+      - name: Apply GM6IX8X dual-source cooler policy
+        shell: pwsh
+        run: |
+          python r7/apply_dual_loop.py --source openrevo-upstream
+          if ($LASTEXITCODE -ne 0) { throw 'Patch validation failed' }
+          python r7/apply_dual_loop.py --source openrevo-upstream --apply
+          if ($LASTEXITCODE -ne 0) { throw 'Patch application failed' }
+          python r7/restore_r5_curve.py openrevo-upstream
+          if ($LASTEXITCODE -ne 0) { throw 'r5 vertical curve restore failed' }
+          python r8/fix_adaptive_ui.py openrevo-upstream
+          if ($LASTEXITCODE -ne 0) { throw 'r8 truthful smart UI patch failed' }
+          git -C openrevo-upstream diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'Patch whitespace validation failed' }
+
+      - name: Fix pinned upstream resource include paths
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = 'openrevo-upstream/src-tauri/crates/openrevo-core/src/hal/declarative/model_manifest.rs'
+          $body = [System.IO.File]::ReadAllText($file)
+          $old = '../../../resources/drivers/'
+          $count = ($body.Split([string[]]@($old), [System.StringSplitOptions]::None)).Length - 1
+          if ($count -ne 5) { throw "Expected exactly 5 upstream include paths; got $count" }
+          $body = $body.Replace($old, '../../../../../resources/drivers/')
+          [System.IO.File]::WriteAllText($file, $body, (New-Object System.Text.UTF8Encoding($false)))
+
+      - name: Install dependencies
+        working-directory: openrevo-upstream
+        shell: pwsh
+        run: |
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+
+      - name: Test actual r7 thermal policy with standalone rustc
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force test-rust | Out-Null
+          rustc --edition=2021 --test --cfg r7_standalone_test openrevo-upstream/src-tauri/src/driver/dual_loop_policy.rs -o test-rust/r7-policy-tests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to compile the actual r7 policy unit tests' }
+          $result = & ./test-rust/r7-policy-tests.exe 2>&1 | Out-String
+          Write-Output $result
+          if ($LASTEXITCODE -ne 0) { throw 'r7 policy test executable failed' }
+          if ($result -notmatch '8 passed; 0 failed') { throw 'Expected 8 r7 policy tests to execute successfully' }
+
+      - name: Build NSIS Setup
+        working-directory: openrevo-upstream
+        shell: pwsh
+        run: |
+          pnpm tauri build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw 'Windows NSIS build failed' }
+
+      - name: Collect Setup only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidate = Get-ChildItem 'openrevo-upstream/src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if (-not $candidate) { throw 'No Setup exe found' }
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item -LiteralPath $candidate.FullName -Destination 'out/OpenRevo-GM6IX8X-r8-SmartUI-Setup-Unsigned.exe'
+
+      - name: Upload Setup EXE only
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRevo-GM6IX8X-r8-SmartUI-Setup
+          path: out/OpenRevo-GM6IX8X-r8-SmartUI-Setup-Unsigned.exe
+          if-no-files-found: error
+          retention-days: 7
