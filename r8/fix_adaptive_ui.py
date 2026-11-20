@@ -117,7 +117,7 @@ EDITS = [
   },
   {
     "path": "src/components/water_cooler/CoolerCurvePanel.tsx",
-    "old": "              低温停转区 (&lt;{displayStart}°C)",
+    "old": "              低温停转区 (≤{showStopHandle ? displayStop : displayStart - 5}°C)",
     "new": "              {isDualProfile ? '低温参考（停泵还需持续冷却）' : <>低温停转区 (&lt;{displayStart}°C)</>}",
     "label": "curve low label"
   },
@@ -170,7 +170,6 @@ EDITS = [
     "label": "curve hint"
   }
 ]
-
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: fix_adaptive_ui.py <openrevo-source-root>")
