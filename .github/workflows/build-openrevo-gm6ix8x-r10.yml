@@ -141,11 +141,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = 'openrevo-upstream/src-tauri/target/release/open-revo.exe'
-          if (-not (Test-Path -LiteralPath $exe)) { throw "Built binary not found: $exe" }
-          & findstr.exe /C:"GPU_CONTRACT" /C:"startup contract restored on attempt" $exe | Out-Null
+          $exe = Get-ChildItem 'openrevo-upstream/src-tauri/target/release' -Filter '*.exe' -File |
+            Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $exe) { throw 'No release exe found under src-tauri/target/release' }
+          Write-Output ("Verifying {0} ({1:N0} bytes)" -f $exe.Name, $exe.Length)
+          python -c "import sys;d=open(sys.argv[1],'rb').read();n=[b'GPU_CONTRACT',b'startup contract restored on attempt'];m=[x.decode() for x in n if x not in d];print('missing:',m);sys.exit(1 if m else 0)" $exe.FullName
           if ($LASTEXITCODE -ne 0) { throw 'r10 GPU_CONTRACT strings are missing from the built binary - patch did not reach the compiled crate' }
-          Write-Output 'r10 GPU_CONTRACT restore task is present in the compiled binary'
+          Write-Output 'r10 GPU_CONTRACT restore task confirmed inside the compiled binary'
 
       - name: Collect Setup only
         shell: pwsh
