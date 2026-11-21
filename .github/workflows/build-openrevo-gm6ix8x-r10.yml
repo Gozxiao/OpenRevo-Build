@@ -97,7 +97,7 @@ jobs:
           $hits = ($body.Split([string[]]@('spawn_startup_gpu_contract_restore'), [System.StringSplitOptions]::None)).Length - 1
           if ($hits -ne 2) { throw "Expected 2 r10 wiring sites in power/mod.rs; got $hits" }
           $anchors = ($body.Split([string[]]@('GPU_CONTRACT'), [System.StringSplitOptions]::None)).Length - 1
-          if ($anchors -ne 11) { throw "Expected 11 GPU_CONTRACT log anchors; got $anchors" }
+          if ($anchors -ne 13) { throw "Expected 13 GPU_CONTRACT log anchors; got $anchors" }
 
       - name: Fix pinned upstream resource include paths
         shell: pwsh

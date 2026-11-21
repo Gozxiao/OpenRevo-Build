@@ -23,9 +23,11 @@ Root cause found in upstream b7d2b52
 Fix strategy
 ------------
 Add one deferred task, started from the existing startup restore thread, that:
-  * only runs for the Custom (beacon/tuning) power mode, on DC barrel power, when the
-    active custom profile actually enables Dynamic Boost, and when no declarative
-    manifest owns the hardware;
+  * re-validates the live conditions (Custom mode still active, DC barrel still plugged,
+    declarative manifest absent, current profile still allows Dynamic Boost) on *every*
+    attempt and again immediately before the write, so a power-mode or profile switch
+    performed while the task is sleeping can never leak this profile's wattage into
+    another mode;
   * waits for the capability probe to become ready and retries a bounded number of times;
   * never touches `UnifiedPowerActuator` (and therefore never depends on the possibly
     stale `OnceLock` architecture); it calls the stateless, already-proven
@@ -36,6 +38,10 @@ Add one deferred task, started from the existing startup restore thread, that:
     they already match;
   * verifies by reading the EC registers back, and stops early instead of hammering the
     EC when the hardware does not accept the values.
+
+Note: EC register readback only proves the contract was written into the EC. It does not
+prove that the NVIDIA driver advertises the same ceiling; confirm the effective limit once
+on the real machine with `nvidia-smi --query-gpu=enforced.power.limit --format=csv`.
 
 Untouched on purpose: CPU power limits, XTU, GPU core/memory clock offsets, fan curves,
 water cooler pump policy, other power modes, and the EC write implementation itself.
@@ -69,30 +75,11 @@ FUNCS_BLOCK = r'''
 ///   first use, so an early pending probe can poison the architecture for the whole session.
 /// Therefore this task never goes through the actuator and always calls the stateless
 /// `heal_gpu_power_contract()`, which re-probes the GPU on every invocation.
+///
+/// Every attempt re-reads the live configuration first: if the user switched power mode or
+/// profile while this task was sleeping, it aborts instead of writing another mode's wattage.
 fn spawn_startup_gpu_contract_restore() {
     std::thread::spawn(move || {
-        let cfg = crate::system::config::load_config();
-        let profile = cfg.custom_profile.clone();
-
-        if !(profile.gpu_db_enabled || profile.gpu_super_perf) {
-            crate::log_info!(
-                "GPU_CONTRACT",
-                "startup restore skipped: Dynamic Boost disabled in active custom profile"
-            );
-            return;
-        }
-        if !crate::commands::hardware_cmd::is_dc_round_plugged_in() {
-            crate::log_info!("GPU_CONTRACT", "startup restore skipped: not on DC barrel power");
-            return;
-        }
-        if crate::hal::declarative::load_matched_manifest().is_some() {
-            crate::log_info!(
-                "GPU_CONTRACT",
-                "startup restore skipped: declarative manifest owns hardware power"
-            );
-            return;
-        }
-
         let mut last_seen: Option<(u8, u8, u8, u8)> = None;
 
         for attempt in 1..=6u32 {
@@ -102,6 +89,45 @@ fn spawn_startup_gpu_contract_restore() {
                 2500
             }));
 
+            // (1) Re-validate live conditions before doing anything with the EC.
+            let live = crate::system::config::load_config();
+            if live.power_mode != 4 {
+                crate::log_warn!(
+                    "GPU_CONTRACT",
+                    "attempt {}: aborted, power mode is now {} (Custom mode required)",
+                    attempt,
+                    live.power_mode
+                );
+                return;
+            }
+            if !crate::commands::hardware_cmd::is_dc_round_plugged_in() {
+                crate::log_warn!(
+                    "GPU_CONTRACT",
+                    "attempt {}: aborted, DC barrel power is no longer present",
+                    attempt
+                );
+                return;
+            }
+            if crate::hal::declarative::load_matched_manifest().is_some() {
+                crate::log_info!(
+                    "GPU_CONTRACT",
+                    "attempt {}: aborted, declarative manifest owns hardware power",
+                    attempt
+                );
+                return;
+            }
+            let profile = live.custom_profile.clone();
+            if !(profile.gpu_db_enabled || profile.gpu_super_perf) {
+                crate::log_warn!(
+                    "GPU_CONTRACT",
+                    "attempt {}: aborted, Dynamic Boost is disabled in the active profile",
+                    attempt
+                );
+                return;
+            }
+
+            // (2) Wait for the VBIOS power-limit probe. Never derive wattages from a
+            // pending capability: `max_db_watts == 0` would clamp down to a 5W write.
             let caps = crate::driver::gpu_bridge::probe_gpu_tuning_capabilities();
             if caps.is_pending
                 || !caps.supports_gpu_tuning
@@ -159,6 +185,19 @@ fn spawn_startup_gpu_contract_restore() {
                 return;
             }
             last_seen = Some(seen);
+
+            // (3) Final cheap re-check immediately before the write, to shrink the window
+            // between decision and actuation as far as possible.
+            if crate::system::config::load_config().power_mode != 4
+                || !crate::commands::hardware_cmd::is_dc_round_plugged_in()
+            {
+                crate::log_warn!(
+                    "GPU_CONTRACT",
+                    "attempt {}: aborted right before write, conditions changed again",
+                    attempt
+                );
+                return;
+            }
 
             let heal_ok = crate::driver::wmi_ec::heal_gpu_power_contract(
                 profile.gpu_super_perf,
